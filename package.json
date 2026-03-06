@@ -1,0 +1,51 @@
+{
+  "name": "talon-mcp-server",
+  "version": "1.0.0",
+  "description": "MCP server for Talon multi-model data engine — SQL, KV, Vector, TimeSeries, MQ, FTS, GEO, Graph, AI",
+  "type": "module",
+  "main": "dist/index.js",
+  "bin": {
+    "talon-mcp-server": "dist/index.js"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "start": "node dist/index.js",
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc",
+    "clean": "rm -rf dist",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": [
+    "talon",
+    "mcp",
+    "model-context-protocol",
+    "database",
+    "vector-search",
+    "kv-store",
+    "timeseries",
+    "full-text-search",
+    "graph-database",
+    "ai-engine"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/darkmice/talon-mcp.git"
+  },
+  "license": "MIT",
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.6.1",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  }
+}
