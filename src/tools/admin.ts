@@ -49,6 +49,14 @@ Returns: { table: string, columns: Array<{ name: string, type: string, nullable:
       },
     },
     async (args) => {
+      // 表名白名单校验：仅允许字母、数字、下划线和点号（schema.table 格式）
+      const TABLE_NAME_RE = /^[a-zA-Z_][a-zA-Z0-9_.]*$/;
+      if (!TABLE_NAME_RE.test(args.table)) {
+        return formatError(
+          `Invalid table name: "${args.table}". Table names must contain only letters, numbers, underscores, and dots.`
+        );
+      }
+
       const res = await client.sql(`DESCRIBE ${args.table}`);
       if (!res.ok || res.error) return formatError(res.error ?? "Describe table failed");
 
