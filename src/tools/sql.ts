@@ -2,6 +2,15 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { getTalonClient, formatError, formatResult } from "../client.js";
 
+// SQL 参数安全类型：仅允许原始类型和数组（用于向量），拒绝任意对象以防类型混淆攻击
+const SqlParam = z.union([
+  z.string(),
+  z.number(),
+  z.boolean(),
+  z.null(),
+  z.array(z.number()), // 支持向量参数 [0.1, 0.2, ...]
+]);
+
 export function registerSqlTools(server: McpServer): void {
   const client = getTalonClient();
 
@@ -29,7 +38,7 @@ Examples:
       inputSchema: {
         sql: z.string().min(1).describe("SQL query to execute (SELECT, SHOW, DESCRIBE, EXPLAIN)"),
         params: z
-          .array(z.unknown())
+          .array(SqlParam)
           .optional()
           .describe("Positional parameters for ? placeholders in prepared statements"),
       },
@@ -81,7 +90,7 @@ Examples:
       inputSchema: {
         sql: z.string().min(1).describe("SQL statement to execute (DDL/DML)"),
         params: z
-          .array(z.unknown())
+          .array(SqlParam)
           .optional()
           .describe("Positional parameters for ? placeholders"),
       },

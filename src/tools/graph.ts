@@ -104,7 +104,7 @@ Returns: { graph: string, vertex_id: number }`,
       inputSchema: {
         graph: z.string().min(1).describe("Graph name"),
         label: z.string().optional().describe("Vertex label/type"),
-        properties: z.record(z.unknown()).optional().describe("Vertex properties"),
+        properties: z.record(z.union([z.string(), z.number(), z.boolean(), z.null()])).optional().describe("Vertex properties"),
       },
       annotations: {
         readOnlyHint: false,
@@ -144,7 +144,7 @@ Returns: { graph: string, edge_id: number }`,
         from_vertex: z.number().int().describe("Source vertex ID"),
         to_vertex: z.number().int().describe("Target vertex ID"),
         label: z.string().optional().describe("Edge label/type"),
-        properties: z.record(z.unknown()).optional().describe("Edge properties"),
+        properties: z.record(z.union([z.string(), z.number(), z.boolean(), z.null()])).optional().describe("Edge properties"),
       },
       annotations: {
         readOnlyHint: false,

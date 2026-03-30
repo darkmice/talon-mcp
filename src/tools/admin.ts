@@ -153,7 +153,7 @@ Examples:
       inputSchema: {
         module: z.string().min(1).describe("Engine module (sql, kv, vector, ts, mq, fts, geo, graph, ai, admin)"),
         action: z.string().min(1).describe("Action to perform"),
-        params: z.record(z.unknown()).default({}).describe("Action parameters"),
+        params: z.record(z.union([z.string(), z.number(), z.boolean(), z.null(), z.array(z.number())])).default({}).describe("Action parameters"),
       },
       annotations: {
         readOnlyHint: false,

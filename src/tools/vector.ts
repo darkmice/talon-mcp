@@ -25,7 +25,7 @@ Examples:
   - index="embeddings", query_vector=[0.1, 0.2, ...], k=5, metric="cosine"`,
       inputSchema: {
         index: z.string().min(1).describe("Vector index name"),
-        query_vector: z.array(z.number()).min(1).describe("Query embedding vector"),
+        query_vector: z.array(z.number()).min(1).max(65536).describe("Query embedding vector"),
         k: z.number().int().min(1).max(1000).default(10).describe("Number of nearest neighbors"),
         metric: z
           .enum(["cosine", "l2", "dot"])
@@ -68,7 +68,7 @@ Returns: { index: string, id: number, message: string }`,
       inputSchema: {
         index: z.string().min(1).describe("Vector index name"),
         id: z.number().int().describe("Unique ID for the vector"),
-        vector: z.array(z.number()).min(1).describe("Embedding vector to insert"),
+        vector: z.array(z.number()).min(1).max(65536).describe("Embedding vector to insert"),
       },
       annotations: {
         readOnlyHint: false,
