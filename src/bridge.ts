@@ -1,3 +1,5 @@
+import { TalonClient, type TalonResponse } from "./client.js";
+
 /**
  * MCP Capability Bridge Contract
  *
@@ -9,6 +11,7 @@
  * - Hook lifecycle (register → discover → invoke → audit)
  * - Failure semantics (timeout, connection, server error, validation)
  * - Bridge assembly for composing capability sets
+ * - Runtime bridge for actual tool invocation through TalonClient
  *
  * The bridge is the single interface runtimes use to interact with MCP
  * capabilities. It decouples the MCP transport/protocol layer from the
@@ -482,5 +485,188 @@ export function assembleBridge(config?: Partial<BridgeConfig>): CapabilityBridge
       bridge.markDiscovered(cap.toolName);
     }
   }
+  return bridge;
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// Tool Router — maps capability names to TalonClient calls
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+/**
+ * Route a capability invocation to the TalonClient.
+ *
+ * Each tool name is mapped to the appropriate client method.
+ * - SQL tools → client.sql()
+ * - Admin tools (list_tables, describe_table, admin) → client.sql() or client.execute()
+ * - All other engines → client.execute(module, action, params)
+ */
+async function routeInvocation(
+  client: TalonClient,
+  toolName: string,
+  args: Record<string, unknown>
+): Promise<TalonResponse> {
+  switch (toolName) {
+    // SQL
+    case "talon_sql_query":
+    case "talon_sql_execute":
+      return client.sql(
+        args.sql as string,
+        args.params as unknown[] | undefined
+      );
+
+    // Admin — routed to SQL or execute depending on the operation
+    case "talon_admin":
+      return client.execute("admin", (args.action as string) ?? "health", args);
+
+    // All other engines use the unified execute endpoint
+    default: {
+      // Extract engine and action from tool name: talon_{engine}_{action?}
+      // e.g. "talon_kv" → module="kv", action from args
+      // e.g. "talon_ai_session" → module="ai", action="session" (or from args)
+      const segments = toolName.replace(/^talon_/, "").split("_");
+      const module = segments[0];
+      const action = segments.length > 1
+        ? segments.slice(1).join("_")
+        : (args.action as string) ?? "default";
+      return client.execute(module, action, args);
+    }
+  }
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// Runtime Bridge — bridge + actual invocation
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+/** Configuration for the runtime bridge. */
+export interface RuntimeBridgeConfig extends BridgeConfig {
+  /** Talon server base URL. */
+  talonUrl?: string;
+  /** Talon request timeout (ms). */
+  talonTimeout?: number;
+}
+
+/**
+ * Runtime Bridge — a CapabilityBridge that can actually invoke tools.
+ *
+ * This is what runtimes (talon-agent, talon-sandbox) use to execute
+ * MCP capabilities against a real Talon server.
+ */
+export class RuntimeBridge extends CapabilityBridge {
+  private client: TalonClient;
+
+  constructor(client: TalonClient, config?: Partial<BridgeConfig>) {
+    super(config);
+    this.client = client;
+  }
+
+  /**
+   * Invoke a capability and return the result.
+   *
+   * Full lifecycle: validate → emit invoked → route to TalonClient → emit completed/failed.
+   */
+  async invoke(request: InvocationRequest): Promise<InvocationResult> {
+    // Pre-flight validation
+    const preflightError = this.validateRequest(request);
+    if (preflightError) {
+      return {
+        ok: false,
+        toolName: request.toolName,
+        error: preflightError,
+        durationMs: 0,
+      };
+    }
+
+    // Start lifecycle tracking
+    const completeInvocation = this.startInvocation(request);
+    const startMs = Date.now();
+
+    try {
+      // Apply timeout
+      const timeoutMs = this.getTimeout(request);
+      const response = await Promise.race([
+        routeInvocation(this.client, request.toolName, request.args),
+        new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error("BRIDGE_TIMEOUT")), timeoutMs)
+        ),
+      ]);
+
+      const durationMs = Date.now() - startMs;
+
+      if (response.ok) {
+        const result: InvocationResult = {
+          ok: true,
+          toolName: request.toolName,
+          data: response.data ?? response,
+          durationMs,
+        };
+        completeInvocation(result);
+        return result;
+      } else {
+        const result: InvocationResult = {
+          ok: false,
+          toolName: request.toolName,
+          error: serverError(response.error ?? "Unknown server error"),
+          durationMs,
+        };
+        completeInvocation(result);
+        return result;
+      }
+    } catch (err: unknown) {
+      const durationMs = Date.now() - startMs;
+      const msg = err instanceof Error ? err.message : String(err);
+
+      let error;
+      if (msg === "BRIDGE_TIMEOUT") {
+        error = timeoutError(
+          `Invocation of "${request.toolName}" timed out after ${this.getTimeout(request)}ms`
+        );
+      } else if (msg.includes("ECONNREFUSED") || msg.includes("fetch failed")) {
+        error = connectionError(
+          `Cannot reach Talon server for "${request.toolName}"`,
+          msg
+        );
+      } else {
+        error = serverError(`Invocation failed: ${msg}`, msg);
+      }
+
+      const result: InvocationResult = {
+        ok: false,
+        toolName: request.toolName,
+        error,
+        durationMs,
+      };
+      completeInvocation(result);
+      return result;
+    }
+  }
+}
+
+/**
+ * Assemble a runtime bridge wired to a real TalonClient.
+ *
+ * This is the main entry point for runtimes that want to invoke
+ * MCP capabilities against a Talon server.
+ */
+export function assembleRuntimeBridge(
+  config?: Partial<RuntimeBridgeConfig>
+): RuntimeBridge {
+  const client = new TalonClient({
+    baseUrl: config?.talonUrl ?? process.env.TALON_URL ?? "http://localhost:8080",
+    timeout: config?.talonTimeout ?? parseInt(process.env.TALON_TIMEOUT ?? "30000", 10),
+  });
+
+  const bridge = new RuntimeBridge(client, {
+    defaultTimeoutMs: config?.defaultTimeoutMs ?? 30_000,
+    autoDiscover: config?.autoDiscover ?? true,
+  });
+
+  bridge.registerAll(TALON_CAPABILITY_CATALOG);
+
+  if (bridge["config"].autoDiscover) {
+    for (const cap of TALON_CAPABILITY_CATALOG) {
+      bridge.markDiscovered(cap.toolName);
+    }
+  }
+
   return bridge;
 }

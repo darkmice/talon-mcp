@@ -8,7 +8,9 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import {
   CapabilityBridge,
+  RuntimeBridge,
   assembleBridge,
+  assembleRuntimeBridge,
   TALON_CAPABILITY_CATALOG,
   connectionError,
   timeoutError,
@@ -397,5 +399,182 @@ describe("CapabilityBridge — timeout", () => {
   it("should use request-level timeout override", () => {
     const bridge = new CapabilityBridge({ defaultTimeoutMs: 5000 });
     expect(bridge.getTimeout(makeRequest({ timeoutMs: 1000 }))).toBe(1000);
+  });
+});
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// RuntimeBridge — integration with TalonClient
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+import { TalonClient } from "./client.js";
+
+function makeMockClient(overrides?: Partial<TalonClient>): TalonClient {
+  return {
+    baseUrl: "http://mock:8080",
+    sql: vi.fn().mockResolvedValue({ ok: true, data: { columns: [], rows: [] } }),
+    execute: vi.fn().mockResolvedValue({ ok: true, data: { result: "ok" } }),
+    health: vi.fn().mockResolvedValue({ ok: true, data: { status: "healthy" } }),
+    ...overrides,
+  } as unknown as TalonClient;
+}
+
+describe("RuntimeBridge — invoke", () => {
+  let client: TalonClient;
+  let bridge: RuntimeBridge;
+
+  beforeEach(() => {
+    client = makeMockClient();
+    bridge = new RuntimeBridge(client, { autoDiscover: false });
+    bridge.registerAll(TALON_CAPABILITY_CATALOG);
+    for (const cap of TALON_CAPABILITY_CATALOG) {
+      bridge.markDiscovered(cap.toolName);
+    }
+  });
+
+  it("should invoke SQL query tool through TalonClient.sql()", async () => {
+    const result = await bridge.invoke({
+      toolName: "talon_sql_query",
+      args: { sql: "SELECT 1", params: [] },
+    });
+    expect(result.ok).toBe(true);
+    expect(client.sql).toHaveBeenCalledWith("SELECT 1", []);
+  });
+
+  it("should invoke KV tool through TalonClient.execute()", async () => {
+    const result = await bridge.invoke({
+      toolName: "talon_kv",
+      args: { action: "get", key: "mykey" },
+    });
+    expect(result.ok).toBe(true);
+    expect(client.execute).toHaveBeenCalledWith(
+      "kv",
+      "get",
+      expect.objectContaining({ key: "mykey" })
+    );
+  });
+
+  it("should invoke AI session tool through TalonClient.execute()", async () => {
+    const result = await bridge.invoke({
+      toolName: "talon_ai_session",
+      args: { session_id: "s1" },
+    });
+    expect(result.ok).toBe(true);
+    expect(client.execute).toHaveBeenCalledWith(
+      "ai",
+      "session",
+      expect.objectContaining({ session_id: "s1" })
+    );
+  });
+
+  it("should return server error when TalonClient responds with ok=false", async () => {
+    (client.sql as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ok: false,
+      error: "table not found",
+    });
+
+    const result = await bridge.invoke({
+      toolName: "talon_sql_query",
+      args: { sql: "SELECT * FROM missing" },
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.kind).toBe("server");
+      expect(result.error.message).toContain("table not found");
+    }
+  });
+
+  it("should return not_found error for unregistered tool", async () => {
+    const result = await bridge.invoke({
+      toolName: "nonexistent_tool",
+      args: {},
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.kind).toBe("not_found");
+    }
+  });
+
+  it("should return unavailable error for undiscovered tool", async () => {
+    const undiscoveredBridge = new RuntimeBridge(client, { autoDiscover: false });
+    undiscoveredBridge.register(makeDescriptor({ toolName: "my_tool" }));
+    // Not calling markDiscovered
+
+    const result = await undiscoveredBridge.invoke({
+      toolName: "my_tool",
+      args: {},
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.kind).toBe("unavailable");
+    }
+  });
+
+  it("should emit full lifecycle events during invoke", async () => {
+    const events: HookLifecycleEvent[] = [];
+    bridge.onHookEvent((e) => events.push(e));
+
+    await bridge.invoke({
+      toolName: "talon_sql_query",
+      args: { sql: "SELECT 1" },
+    });
+
+    const phases = events.map((e) => e.phase);
+    expect(phases).toContain("invoked");
+    expect(phases).toContain("completed");
+  });
+
+  it("should emit failed lifecycle event on error", async () => {
+    (client.sql as ReturnType<typeof vi.fn>).mockRejectedValue(
+      new Error("ECONNREFUSED")
+    );
+    const events: HookLifecycleEvent[] = [];
+    bridge.onHookEvent((e) => events.push(e));
+
+    const result = await bridge.invoke({
+      toolName: "talon_sql_query",
+      args: { sql: "SELECT 1" },
+    });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.kind).toBe("connection");
+      expect(result.error.retryable).toBe(true);
+    }
+    const phases = events.map((e) => e.phase);
+    expect(phases).toContain("invoked");
+    expect(phases).toContain("failed");
+  });
+
+  it("should measure invocation duration", async () => {
+    const result = await bridge.invoke({
+      toolName: "talon_sql_query",
+      args: { sql: "SELECT 1" },
+    });
+    expect(result.durationMs).toBeGreaterThanOrEqual(0);
+  });
+});
+
+describe("assembleRuntimeBridge", () => {
+  it("should create a RuntimeBridge with all catalog capabilities", () => {
+    const bridge = assembleRuntimeBridge({
+      talonUrl: "http://test:9999",
+      autoDiscover: true,
+    });
+    expect(bridge).toBeInstanceOf(RuntimeBridge);
+    expect(bridge.size).toBe(TALON_CAPABILITY_CATALOG.length);
+    expect(bridge.discoveredCount).toBe(TALON_CAPABILITY_CATALOG.length);
+    for (const cap of TALON_CAPABILITY_CATALOG) {
+      expect(bridge.isAvailable(cap.toolName)).toBe(true);
+    }
+  });
+
+  it("should support strict discovery mode", () => {
+    const bridge = assembleRuntimeBridge({
+      talonUrl: "http://test:9999",
+      autoDiscover: false,
+    });
+    expect(bridge.size).toBe(TALON_CAPABILITY_CATALOG.length);
+    expect(bridge.discoveredCount).toBe(0);
+    expect(bridge.isAvailable("talon_sql_query")).toBe(false);
   });
 });
