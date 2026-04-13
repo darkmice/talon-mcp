@@ -336,14 +336,14 @@ describe("assembleBridge", () => {
     }
   });
 
-  it("should register all expected engines", () => {
+  it("should register all 10 engines", () => {
     const bridge = assembleBridge();
     const engines = new Set(bridge.listCapabilities().map((c) => c.engine));
-    expect(engines).toContain("sql");
-    expect(engines).toContain("kv");
-    expect(engines).toContain("vector");
-    expect(engines).toContain("ai");
-    expect(engines).toContain("admin");
+    const expected = ["sql", "kv", "vector", "timeseries", "mq", "fts", "geo", "graph", "ai", "admin"];
+    for (const e of expected) {
+      expect(engines).toContain(e);
+    }
+    expect(engines.size).toBe(10);
   });
 });
 
@@ -377,12 +377,94 @@ describe("TALON_CAPABILITY_CATALOG", () => {
     expect(sqlQuery!.idempotent).toBe(true);
   });
 
-  it("admin is admin-level access", () => {
-    const admin = TALON_CAPABILITY_CATALOG.find(
-      (c) => c.toolName === "talon_admin"
+  it("admin tools are admin-level access", () => {
+    const adminTools = TALON_CAPABILITY_CATALOG.filter(
+      (c) => c.engine === "admin"
     );
-    expect(admin).toBeDefined();
-    expect(admin!.access).toBe("admin");
+    expect(adminTools.length).toBeGreaterThanOrEqual(3);
+    for (const t of adminTools) {
+      expect(t.access).toBe("admin");
+    }
+  });
+});
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// Catalog ↔ MCP Server alignment (regression lock)
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+describe("Catalog alignment with MCP server", () => {
+  // These are the actual tool names registered in src/tools/*.ts via
+  // server.registerTool(). If a tool is added or removed from the server,
+  // this set must be updated in lockstep with TALON_CAPABILITY_CATALOG.
+  const ACTUAL_SERVER_TOOL_NAMES = new Set([
+    // ai
+    "talon_ai_memory",
+    "talon_ai_session",
+    // admin
+    "talon_describe_table",
+    "talon_list_tables",
+    "talon_persist",
+    "talon_raw_execute",
+    "talon_server_info",
+    // fts
+    "talon_fts_create_index",
+    "talon_fts_hybrid_search",
+    "talon_fts_index_doc",
+    "talon_fts_search",
+    // geo
+    "talon_geo_add",
+    "talon_geo_create",
+    "talon_geo_search",
+    // graph
+    "talon_graph_add_edge",
+    "talon_graph_add_vertex",
+    "talon_graph_create",
+    "talon_graph_query",
+    "talon_graph_shortest_path",
+    // kv
+    "talon_kv_delete",
+    "talon_kv_get",
+    "talon_kv_incr",
+    "talon_kv_mget",
+    "talon_kv_scan",
+    "talon_kv_set",
+    // mq
+    "talon_mq_ack",
+    "talon_mq_create_topic",
+    "talon_mq_list_topics",
+    "talon_mq_poll",
+    "talon_mq_publish",
+    // sql
+    "talon_sql_execute",
+    "talon_sql_query",
+    // timeseries
+    "talon_ts_create",
+    "talon_ts_query",
+    "talon_ts_write",
+    // vector
+    "talon_vector_create_index",
+    "talon_vector_insert",
+    "talon_vector_search",
+  ]);
+
+  it("bridge catalog tool names exactly match MCP server registrations", () => {
+    const catalogNames = new Set(TALON_CAPABILITY_CATALOG.map((c) => c.toolName));
+
+    // Every server tool must be in the catalog
+    for (const name of ACTUAL_SERVER_TOOL_NAMES) {
+      expect(catalogNames.has(name)).toBe(true);
+    }
+    // Every catalog tool must be registered on the server
+    for (const name of catalogNames) {
+      expect(ACTUAL_SERVER_TOOL_NAMES.has(name)).toBe(true);
+    }
+    // Exact count match
+    expect(catalogNames.size).toBe(ACTUAL_SERVER_TOOL_NAMES.size);
+  });
+
+  it("catalog has exactly 38 tools matching 38 server registrations", () => {
+    expect(TALON_CAPABILITY_CATALOG.length).toBe(38);
+    expect(ACTUAL_SERVER_TOOL_NAMES.size).toBe(38);
   });
 });
 
@@ -440,10 +522,10 @@ describe("RuntimeBridge — invoke", () => {
     expect(client.sql).toHaveBeenCalledWith("SELECT 1", []);
   });
 
-  it("should invoke KV tool through TalonClient.execute()", async () => {
+  it("should invoke KV get tool through TalonClient.execute()", async () => {
     const result = await bridge.invoke({
-      toolName: "talon_kv",
-      args: { action: "get", key: "mykey" },
+      toolName: "talon_kv_get",
+      args: { key: "mykey" },
     });
     expect(result.ok).toBe(true);
     expect(client.execute).toHaveBeenCalledWith(
@@ -464,6 +546,24 @@ describe("RuntimeBridge — invoke", () => {
       "session",
       expect.objectContaining({ session_id: "s1" })
     );
+  });
+
+  it("should route talon_list_tables through TalonClient.sql()", async () => {
+    const result = await bridge.invoke({
+      toolName: "talon_list_tables",
+      args: {},
+    });
+    expect(result.ok).toBe(true);
+    expect(client.sql).toHaveBeenCalledWith("SHOW TABLES");
+  });
+
+  it("should route talon_server_info through TalonClient.execute()", async () => {
+    const result = await bridge.invoke({
+      toolName: "talon_server_info",
+      args: {},
+    });
+    expect(result.ok).toBe(true);
+    expect(client.execute).toHaveBeenCalledWith("admin", "info", {});
   });
 
   it("should return server error when TalonClient responds with ok=false", async () => {

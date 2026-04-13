@@ -352,117 +352,326 @@ export class CapabilityBridge {
 
 /** All capabilities exposed by the standard Talon MCP server. */
 export const TALON_CAPABILITY_CATALOG: CapabilityDescriptor[] = [
-  // SQL
+  // ── ai ──
   {
-    toolName: "talon_sql_query",
-    engine: "sql",
-    description: "Execute SQL queries against Talon",
+    toolName: "talon_ai_memory",
+    engine: "ai",
+    description: "Manage AI memories — store and search semantic memories for a session.",
+    access: "write",
+    concurrencySafe: false,
+    idempotent: false,
+  },
+  {
+    toolName: "talon_ai_session",
+    engine: "ai",
+    description: "Manage AI sessions — create, get history, append messages, manage context windows.",
+    access: "write",
+    concurrencySafe: false,
+    idempotent: false,
+  },
+
+  // ── admin ──
+  {
+    toolName: "talon_describe_table",
+    engine: "admin",
+    description: "Get the schema/column definitions for a specific table.",
+    access: "admin",
+    concurrencySafe: true,
+    idempotent: true,
+  },
+  {
+    toolName: "talon_list_tables",
+    engine: "admin",
+    description: "List all tables in the Talon database.",
+    access: "admin",
+    concurrencySafe: true,
+    idempotent: true,
+  },
+  {
+    toolName: "talon_persist",
+    engine: "admin",
+    description: "Force flush all in-memory data to disk.",
+    access: "admin",
+    concurrencySafe: false,
+    idempotent: true,
+  },
+  {
+    toolName: "talon_raw_execute",
+    engine: "admin",
+    description: "Execute a raw command against the Talon engine.",
+    access: "admin",
+    concurrencySafe: false,
+    idempotent: false,
+  },
+  {
+    toolName: "talon_server_info",
+    engine: "admin",
+    description: "Get Talon server status, version, and database statistics.",
+    access: "admin",
+    concurrencySafe: true,
+    idempotent: true,
+  },
+
+  // ── fts ──
+  {
+    toolName: "talon_fts_create_index",
+    engine: "fts",
+    description: "Create a new full-text search index.",
+    access: "write",
+    concurrencySafe: false,
+    idempotent: true,
+  },
+  {
+    toolName: "talon_fts_hybrid_search",
+    engine: "fts",
+    description: "Perform hybrid search combining BM25 and vector similarity using RRF.",
     access: "read",
     concurrencySafe: true,
     idempotent: true,
   },
   {
+    toolName: "talon_fts_index_doc",
+    engine: "fts",
+    description: "Index a document into a full-text search index.",
+    access: "write",
+    concurrencySafe: false,
+    idempotent: true,
+  },
+  {
+    toolName: "talon_fts_search",
+    engine: "fts",
+    description: "Perform full-text search with BM25 scoring.",
+    access: "read",
+    concurrencySafe: true,
+    idempotent: true,
+  },
+
+  // ── geo ──
+  {
+    toolName: "talon_geo_add",
+    engine: "geo",
+    description: "Add a member with coordinates to a GEO index.",
+    access: "write",
+    concurrencySafe: false,
+    idempotent: true,
+  },
+  {
+    toolName: "talon_geo_create",
+    engine: "geo",
+    description: "Create a new GEO spatial index.",
+    access: "write",
+    concurrencySafe: false,
+    idempotent: true,
+  },
+  {
+    toolName: "talon_geo_search",
+    engine: "geo",
+    description: "Search for nearby members within a radius from a point.",
+    access: "read",
+    concurrencySafe: true,
+    idempotent: true,
+  },
+
+  // ── graph ──
+  {
+    toolName: "talon_graph_add_edge",
+    engine: "graph",
+    description: "Add a directed edge between two vertices.",
+    access: "write",
+    concurrencySafe: false,
+    idempotent: false,
+  },
+  {
+    toolName: "talon_graph_add_vertex",
+    engine: "graph",
+    description: "Add a vertex to a property graph.",
+    access: "write",
+    concurrencySafe: false,
+    idempotent: false,
+  },
+  {
+    toolName: "talon_graph_create",
+    engine: "graph",
+    description: "Create a new property graph.",
+    access: "write",
+    concurrencySafe: false,
+    idempotent: true,
+  },
+  {
+    toolName: "talon_graph_query",
+    engine: "graph",
+    description: "Traverse a property graph using BFS from a starting vertex.",
+    access: "read",
+    concurrencySafe: true,
+    idempotent: true,
+  },
+  {
+    toolName: "talon_graph_shortest_path",
+    engine: "graph",
+    description: "Find the shortest path between two vertices.",
+    access: "read",
+    concurrencySafe: true,
+    idempotent: true,
+  },
+
+  // ── kv ──
+  {
+    toolName: "talon_kv_delete",
+    engine: "kv",
+    description: "Delete a key from KV store.",
+    access: "write",
+    concurrencySafe: false,
+    idempotent: true,
+  },
+  {
+    toolName: "talon_kv_get",
+    engine: "kv",
+    description: "Get a value from KV store by key.",
+    access: "read",
+    concurrencySafe: true,
+    idempotent: true,
+  },
+  {
+    toolName: "talon_kv_incr",
+    engine: "kv",
+    description: "Atomically increment a numeric value in KV store.",
+    access: "write",
+    concurrencySafe: false,
+    idempotent: false,
+  },
+  {
+    toolName: "talon_kv_mget",
+    engine: "kv",
+    description: "Get multiple values from KV store in a single request.",
+    access: "read",
+    concurrencySafe: true,
+    idempotent: true,
+  },
+  {
+    toolName: "talon_kv_scan",
+    engine: "kv",
+    description: "Scan keys in KV store by prefix with pagination.",
+    access: "read",
+    concurrencySafe: true,
+    idempotent: true,
+  },
+  {
+    toolName: "talon_kv_set",
+    engine: "kv",
+    description: "Set a key-value pair in KV store with optional TTL.",
+    access: "write",
+    concurrencySafe: false,
+    idempotent: true,
+  },
+
+  // ── mq ──
+  {
+    toolName: "talon_mq_ack",
+    engine: "mq",
+    description: "Acknowledge a consumed message.",
+    access: "write",
+    concurrencySafe: false,
+    idempotent: true,
+  },
+  {
+    toolName: "talon_mq_create_topic",
+    engine: "mq",
+    description: "Create a new message queue topic.",
+    access: "write",
+    concurrencySafe: false,
+    idempotent: true,
+  },
+  {
+    toolName: "talon_mq_list_topics",
+    engine: "mq",
+    description: "List all message queue topics.",
+    access: "read",
+    concurrencySafe: true,
+    idempotent: true,
+  },
+  {
+    toolName: "talon_mq_poll",
+    engine: "mq",
+    description: "Poll messages from a topic using consumer group pattern.",
+    access: "write",
+    concurrencySafe: false,
+    idempotent: false,
+  },
+  {
+    toolName: "talon_mq_publish",
+    engine: "mq",
+    description: "Publish a message to a topic.",
+    access: "write",
+    concurrencySafe: false,
+    idempotent: false,
+  },
+
+  // ── sql ──
+  {
     toolName: "talon_sql_execute",
     engine: "sql",
-    description: "Execute SQL DDL/DML statements",
+    description: "Execute a SQL statement that modifies the database (DDL or DML).",
     access: "write",
     concurrencySafe: false,
     idempotent: false,
   },
-  // KV
   {
-    toolName: "talon_kv",
-    engine: "kv",
-    description: "Key-value operations (get, set, delete, list, batch)",
-    access: "write",
+    toolName: "talon_sql_query",
+    engine: "sql",
+    description: "Execute a read-only SQL query and return results.",
+    access: "read",
     concurrencySafe: true,
-    idempotent: false,
+    idempotent: true,
   },
-  // Vector
+
+  // ── timeseries ──
   {
-    toolName: "talon_vector",
-    engine: "vector",
-    description: "Vector embeddings and similarity search",
-    access: "write",
-    concurrencySafe: true,
-    idempotent: false,
-  },
-  // TimeSeries
-  {
-    toolName: "talon_timeseries",
+    toolName: "talon_ts_create",
     engine: "timeseries",
-    description: "Time-series data ingestion and range queries",
+    description: "Create a new TimeSeries with tag and field definitions.",
     access: "write",
-    concurrencySafe: true,
-    idempotent: false,
+    concurrencySafe: false,
+    idempotent: true,
   },
-  // MQ
   {
-    toolName: "talon_mq",
-    engine: "mq",
-    description: "Message queue publish, consume, and management",
-    access: "write",
+    toolName: "talon_ts_query",
+    engine: "timeseries",
+    description: "Query time-series data with time range and aggregation.",
+    access: "read",
     concurrencySafe: true,
-    idempotent: false,
+    idempotent: true,
   },
-  // FTS
   {
-    toolName: "talon_fts",
-    engine: "fts",
-    description: "Full-text search indexing and queries",
-    access: "write",
-    concurrencySafe: true,
-    idempotent: false,
-  },
-  // Geo
-  {
-    toolName: "talon_geo",
-    engine: "geo",
-    description: "Geospatial data storage and proximity queries",
-    access: "write",
-    concurrencySafe: true,
-    idempotent: false,
-  },
-  // Graph
-  {
-    toolName: "talon_graph",
-    engine: "graph",
-    description: "Graph node/edge management and traversal",
-    access: "write",
-    concurrencySafe: true,
-    idempotent: false,
-  },
-  // AI
-  {
-    toolName: "talon_ai_session",
-    engine: "ai",
-    description: "AI session management (create, history, append, context)",
+    toolName: "talon_ts_write",
+    engine: "timeseries",
+    description: "Insert a data point into a TimeSeries.",
     access: "write",
     concurrencySafe: false,
     idempotent: false,
   },
+
+  // ── vector ──
   {
-    toolName: "talon_ai_memory",
-    engine: "ai",
-    description: "AI memory store/retrieve/search",
+    toolName: "talon_vector_create_index",
+    engine: "vector",
+    description: "Create a new HNSW vector index.",
     access: "write",
-    concurrencySafe: true,
-    idempotent: false,
+    concurrencySafe: false,
+    idempotent: true,
   },
   {
-    toolName: "talon_ai_rag",
-    engine: "ai",
-    description: "RAG document ingestion and retrieval",
+    toolName: "talon_vector_insert",
+    engine: "vector",
+    description: "Insert a vector into an HNSW index.",
     access: "write",
-    concurrencySafe: true,
-    idempotent: false,
+    concurrencySafe: false,
+    idempotent: true,
   },
-  // Admin
   {
-    toolName: "talon_admin",
-    engine: "admin",
-    description: "Administrative operations (health, stats, config)",
-    access: "admin",
+    toolName: "talon_vector_search",
+    engine: "vector",
+    description: "Perform vector similarity search using HNSW index.",
+    access: "read",
     concurrencySafe: true,
     idempotent: true,
   },
@@ -497,7 +706,7 @@ export function assembleBridge(config?: Partial<BridgeConfig>): CapabilityBridge
  *
  * Each tool name is mapped to the appropriate client method.
  * - SQL tools → client.sql()
- * - Admin tools (list_tables, describe_table, admin) → client.sql() or client.execute()
+ * - Admin tools with SQL semantics → client.sql() or client.execute()
  * - All other engines → client.execute(module, action, params)
  */
 async function routeInvocation(
@@ -506,7 +715,7 @@ async function routeInvocation(
   args: Record<string, unknown>
 ): Promise<TalonResponse> {
   switch (toolName) {
-    // SQL
+    // SQL — direct passthrough
     case "talon_sql_query":
     case "talon_sql_execute":
       return client.sql(
@@ -514,15 +723,23 @@ async function routeInvocation(
         args.params as unknown[] | undefined
       );
 
-    // Admin — routed to SQL or execute depending on the operation
-    case "talon_admin":
-      return client.execute("admin", (args.action as string) ?? "health", args);
+    // Admin tools that use SQL under the hood
+    case "talon_list_tables":
+      return client.sql("SHOW TABLES");
+    case "talon_describe_table":
+      return client.sql(`DESCRIBE ${args.table as string}`);
 
-    // All other engines use the unified execute endpoint
+    // Admin tools that use execute
+    case "talon_server_info":
+      return client.execute("admin", "info", {});
+    case "talon_persist":
+      return client.execute("admin", "persist", {});
+    case "talon_raw_execute":
+      return client.execute("admin", "raw", args);
+
+    // All other engines use the unified execute endpoint.
+    // Tool name convention: talon_{engine}_{action}
     default: {
-      // Extract engine and action from tool name: talon_{engine}_{action?}
-      // e.g. "talon_kv" → module="kv", action from args
-      // e.g. "talon_ai_session" → module="ai", action="session" (or from args)
       const segments = toolName.replace(/^talon_/, "").split("_");
       const module = segments[0];
       const action = segments.length > 1
